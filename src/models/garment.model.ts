@@ -20,6 +20,9 @@ export interface GarmentAttrs {
   description: string;
   fabrics: Types.DocumentArray<GarmentFabricAttrs>;
   createdBy: Types.ObjectId | null;
+  approvedBy: Types.ObjectId | null;
+  approvedByName: string | null;
+  approvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,7 +80,11 @@ const GarmentSchema = new Schema<GarmentAttrs>(
         message: 'A fabric can only be assigned once per garment.'
       }
     },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Written when the style is approved, cleared when it is reopened.
+    approvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    approvedByName: { type: String, default: null },
+    approvedAt: { type: Date, default: null }
   },
   { timestamps: true }
 );

@@ -1,4 +1,5 @@
 import { Types, type ClientSession, type FilterQuery } from 'mongoose';
+import { GARMENT_TRANSITIONS, type GarmentStatus } from '../constants/domain';
 import { ConeOrderModel } from '../models/cone-order.model';
 import { FabricModel } from '../models/fabric.model';
 import { GarmentModel, type GarmentAttrs, type GarmentDocument } from '../models/garment.model';
@@ -9,9 +10,11 @@ import { HttpError } from '../utils/http-error';
 import { sessionOption, withTransaction } from '../utils/transaction';
 import { escapeRegex } from '../utils/regex';
 import { loadMasterData, toDomainOperation } from './calculation.service';
+import type { AuthContext } from '../types/express';
 import type {
   CreateGarmentBody,
   GarmentListQuery,
+  GarmentStatusBody,
   UpdateGarmentBody
 } from '../schemas/garment.schema';
 
@@ -97,6 +100,9 @@ export async function toGarmentDTO(garment: GarmentDocument): Promise<GarmentDTO
         parts: [...entry.parts]
       };
     }),
+    approvedBy: garment.approvedBy ? garment.approvedBy.toString() : null,
+    approvedByName: garment.approvedByName,
+    approvedAt: garment.approvedAt ? garment.approvedAt.toISOString() : null,
     createdAt: garment.createdAt.toISOString(),
     updatedAt: garment.updatedAt.toISOString()
   };
@@ -170,6 +176,7 @@ export async function listGarments(query: GarmentListQuery): Promise<GarmentList
       season: garment.season,
       orderQuantity: garment.orderQuantity,
       status: garment.status,
+      approvedByName: garment.approvedByName,
       operationCount: calculation.operationCount,
       machineTypesUsed: calculation.machineTypesUsed,
       totalCones: calculation.threadCount > 0 ? calculation.totalCones : null,
@@ -180,12 +187,16 @@ export async function listGarments(query: GarmentListQuery): Promise<GarmentList
   return { items, total, page: query.page, limit: query.limit, operationTotal };
 }
 
-export async function getGarment(id: string): Promise<GarmentDTO> {
+async function requireGarment(id: string): Promise<GarmentDocument> {
   const garment = await GarmentModel.findById(id);
   if (!garment) {
     throw HttpError.notFound('That garment does not exist.');
   }
-  return toGarmentDTO(garment);
+  return garment;
+}
+
+export async function getGarment(id: string): Promise<GarmentDTO> {
+  return toGarmentDTO(await requireGarment(id));
 }
 
 /** Deep-copies a source garment's operations onto a target, preserving sequence. */
@@ -265,10 +276,7 @@ export async function createGarment(
 }
 
 export async function updateGarment(id: string, body: UpdateGarmentBody): Promise<GarmentDTO> {
-  const garment = await GarmentModel.findById(id);
-  if (!garment) {
-    throw HttpError.notFound('That garment does not exist.');
-  }
+  const garment = await requireGarment(id);
 
   if (body.styleNumber !== undefined && body.styleNumber !== garment.styleNumber) {
     await assertStyleNumberIsFree(body.styleNumber, id);
@@ -284,11 +292,59 @@ export async function updateGarment(id: string, body: UpdateGarmentBody): Promis
   if (body.garmentType !== undefined) garment.garmentType = body.garmentType;
   if (body.season !== undefined) garment.season = body.season;
   if (body.sizeRange !== undefined) garment.sizeRange = body.sizeRange;
-  if (body.status !== undefined) garment.status = body.status;
   if (body.description !== undefined) garment.description = body.description;
 
   await garment.save();
   return toGarmentDTO(garment);
+}
+
+/**
+ * The same rule the cone order uses, on the style. `GARMENT_TRANSITIONS` is the only
+ * place that says what a status may become — a client-supplied status is never trusted.
+ */
+function assertTransition(garment: GarmentDocument, next: GarmentStatus): void {
+  if (!GARMENT_TRANSITIONS[garment.status].includes(next)) {
+    throw HttpError.invalidTransition(
+      `${garment.styleNumber} is ${garment.status.toLowerCase()} and cannot move to ${next.toLowerCase()}.`,
+      { from: garment.status, to: next }
+    );
+  }
+}
+
+/** Approving records the actor; every other move clears the record back to null. */
+async function transitionGarment(
+  id: string,
+  next: GarmentStatus,
+  actor: AuthContext
+): Promise<GarmentDTO> {
+  const garment = await requireGarment(id);
+  assertTransition(garment, next);
+
+  garment.status = next;
+  if (next === 'Approved') {
+    garment.approvedBy = new Types.ObjectId(actor.userId);
+    garment.approvedByName = actor.name;
+    garment.approvedAt = new Date();
+  } else {
+    garment.approvedBy = null;
+    garment.approvedByName = null;
+    garment.approvedAt = null;
+  }
+
+  await garment.save();
+  return toGarmentDTO(garment);
+}
+
+export async function approveGarment(id: string, actor: AuthContext): Promise<GarmentDTO> {
+  return transitionGarment(id, 'Approved', actor);
+}
+
+export async function setGarmentStatus(
+  id: string,
+  body: GarmentStatusBody,
+  actor: AuthContext
+): Promise<GarmentDTO> {
+  return transitionGarment(id, body.status, actor);
 }
 
 /** `STY-4471` → `STY-4471-A`, then `-B`… A copy of a copy takes the next free letter. */
@@ -315,11 +371,7 @@ export async function duplicateGarment(
   id: string,
   createdBy: string
 ): Promise<DuplicateGarmentResult> {
-  const source = await GarmentModel.findById(id);
-  if (!source) {
-    throw HttpError.notFound('That garment does not exist.');
-  }
-
+  const source = await requireGarment(id);
   const styleNumber = await nextDuplicateStyleNumber(source.styleNumber);
 
   return withTransaction(async (session) => {
@@ -357,10 +409,7 @@ export async function duplicateGarment(
 }
 
 export async function deleteGarment(id: string): Promise<void> {
-  const garment = await GarmentModel.findById(id);
-  if (!garment) {
-    throw HttpError.notFound('That garment does not exist.');
-  }
+  const garment = await requireGarment(id);
 
   const blocking = await ConeOrderModel.find({ garment: garment._id, status: { $ne: 'Draft' } })
     .select('code status')

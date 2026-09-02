@@ -102,6 +102,25 @@ about five micrometres of thread.
 `approvedBy` / `approvedByName` / `approvedAt` fields; the status tells the sheet whether to
 read "Approved by" or "Rejected by". Matches the prototype's seeded `TCO-0136`.
 
+### A garment status is a workflow, not a field
+
+`DATA_MODEL.md` gives `garments.status` three values but no rule for moving between them.
+It now moves the way a cone order does: `GARMENT_TRANSITIONS` in `constants/domain.ts` is the
+only statement of what a status may become, `POST /garments/:id/approve` and
+`POST /garments/:id/status` are the only ways to move one, and both carry
+`requirePermission('approve')` — the existing seventh key, not an eighth. Approving records
+`approvedBy` / `approvedByName` / `approvedAt`; reopening clears all three together.
+
+`status` was therefore **removed from `PATCH /garments/:id`**. Leaving it would have given
+anyone with `info` a second, unguarded way to approve a style, and one that wrote no approval
+record — the two paths could disagree, which is the thing this repository is built to prevent.
+Creation still accepts a status, unchanged: a style may be entered as already approved, and it
+then carries no approval record until someone approves it. The seeded `STY-4471` has one
+because the seed writes it explicitly (R. Fernando, 15 Aug 2026), the same way a seeded order
+carries its decision date. No screen sent `status` on a patch, so the client needed nothing
+beyond the mirror. If styles ever need importing with their approvers, that is a create-body
+field, not a patch.
+
 ### `threadSummary` is empty when no machine type is selected
 
 The prototype renders the string `"No machine type selected"`. That is UI copy, so the API
@@ -124,12 +143,24 @@ Additive only — nothing documented was dropped. Mirror them in `client/src/api
 | `POST /garments` | `operationsCopied` | the success notice says "with n operations copied" |
 | `POST /garments/:id/duplicate` | `operationsCopied`, `sourceStyleNumber` | the duplication notice |
 | `GET /garments/:id/operations` | `machineTypeName/Code/Colour`, `positions[]` | so the expanded panel needs no extra call, as `API.md` requires |
+| `GET /garments/:id` | `approvedBy`, `approvedByName`, `approvedAt` | the style's approval record — the sub-header reads "Approved by <name> · <date>" |
+| `GET /garments` | `approvedByName` | the library shows the approver without a second call |
 
 ### Pagination
 
-`GET /orders` paginates (`?page=&limit=`, default 50, max 200) as documented. `GET /garments`
-does not — `API.md` defines no pagination for it, and README §"Known prototype shortcuts" 7
-lists pagination as a later concern. The register's filter and search are server-side.
+**Every list endpoint pages, in one envelope** — `{ items, total, page, limit }`:
+`/garments`, `/threads`, `/machine-types`, `/fabrics`, `/users`, `/orders`. Default
+`limit` is 25, capped at 200 (over the cap is a `422`); `?q=` searches server-side on each.
+`/garments` adds `operationTotal` so the header can read "<n> styles · <n> operations" for the
+whole filter rather than the page; `/orders` adds its `counts` and `totals` as before.
+
+This closes README §"Known prototype shortcuts" 7. The 200 cap exists so the screens that
+genuinely need a whole set — the thread and machine selects on an operation, the fabric picker
+on the new-garment screen, the copy-operations-from select — can ask for it in one request
+instead of walking pages.
+
+Costing is scoped to the page: `listGarments` only loads operations for the garments it is
+about to return, so the work no longer grows with the size of the library.
 
 ---
 

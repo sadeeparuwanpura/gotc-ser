@@ -864,3 +864,91 @@ describe('phase 7 — cone orders', () => {
     expect(body<ErrorBody>(response).error.code).toBe('IN_USE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 — the garment approval workflow
+// ---------------------------------------------------------------------------
+
+describe('phase 8 — garment approval', () => {
+  it('carries the seeded approval record on the approved style', async () => {
+    const garment = body<GarmentDTO>(
+      await admin.get(`/api/garments/${styleId['STY-4471']}`).expect(200)
+    );
+    expect(garment.status).toBe('Approved');
+    expect(garment.approvedByName).toBe('R. Fernando');
+    expect(garment.approvedAt?.slice(0, 10)).toBe('2026-08-15');
+    expect(garment.approvedBy).not.toBeNull();
+
+    // The library carries the approver's name so the register reads without a second call.
+    const library = body<GarmentListResponse>(
+      await admin.get('/api/garments?q=STY-4471').expect(200)
+    );
+    expect(library.items[0]?.approvedByName).toBe('R. Fernando');
+  });
+
+  it('moves a draft style into development', async () => {
+    const garment = body<GarmentDTO>(
+      await projectManager
+        .post(`/api/garments/${styleId['STY-4510']}/status`)
+        .send({ status: 'In development' })
+        .expect(200)
+    );
+    expect(garment.status).toBe('In development');
+    expect(garment.approvedByName).toBeNull();
+  });
+
+  it('records the approver and the moment of approval', async () => {
+    const garment = body<GarmentDTO>(
+      await projectManager.post(`/api/garments/${styleId['STY-4510']}/approve`).expect(200)
+    );
+    expect(garment.status).toBe('Approved');
+    expect(garment.approvedByName).toBe('K. Aluthge');
+    expect(garment.approvedBy).not.toBeNull();
+    expect(garment.approvedAt).not.toBeNull();
+  });
+
+  it('refuses a move that is not on the transition map', async () => {
+    const response = await projectManager
+      .post(`/api/garments/${styleId['STY-4510']}/status`)
+      .send({ status: 'Draft' })
+      .expect(409);
+    const payload = body<ErrorBody>(response);
+    expect(payload.error.code).toBe('INVALID_TRANSITION');
+    expect(payload.error.message).toBe('STY-4510 is approved and cannot move to draft.');
+    expect(payload.error.details).toMatchObject({ from: 'Approved', to: 'Draft' });
+  });
+
+  it('clears the approval record when the style is reopened', async () => {
+    const reopened = body<GarmentDTO>(
+      await projectManager
+        .post(`/api/garments/${styleId['STY-4510']}/status`)
+        .send({ status: 'In development' })
+        .expect(200)
+    );
+    expect(reopened.status).toBe('In development');
+    expect(reopened.approvedBy).toBeNull();
+    expect(reopened.approvedByName).toBeNull();
+    expect(reopened.approvedAt).toBeNull();
+
+    // Put the style back the way the seed wrote it.
+    const restored = body<GarmentDTO>(
+      await projectManager
+        .post(`/api/garments/${styleId['STY-4510']}/status`)
+        .send({ status: 'Draft' })
+        .expect(200)
+    );
+    expect(restored.status).toBe('Draft');
+  });
+
+  it('refuses an approval from a role without the approve permission', async () => {
+    const response = await garmentTech
+      .post(`/api/garments/${styleId['STY-4502']}/approve`)
+      .expect(403);
+    expect(body<ErrorBody>(response).error.code).toBe('FORBIDDEN');
+
+    await garmentTech
+      .post(`/api/garments/${styleId['STY-4502']}/status`)
+      .send({ status: 'Approved' })
+      .expect(403);
+  });
+});

@@ -84,6 +84,16 @@ export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatu
   Rejected: []
 };
 
+/**
+ * The same rule for a style. Approved is not a dead end — a style reopens into development
+ * when the buyer changes their mind, and reopening clears its approval record.
+ */
+export const GARMENT_TRANSITIONS: Readonly<Record<GarmentStatus, readonly GarmentStatus[]>> = {
+  Draft: ['In development', 'Approved'],
+  'In development': ['Approved', 'Draft'],
+  Approved: ['In development']
+};
+
 export const CONE_ORDER_COUNTER_ID = 'coneOrder';
 export const CONE_ORDER_CODE_PREFIX = 'TCO-';
 

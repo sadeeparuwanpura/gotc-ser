@@ -8,6 +8,7 @@ const BUYER_REQUIRED = 'Buyer is required — the order and both sheets are addr
 const QUANTITY_INVALID = 'Order quantity must be a positive number of pieces.';
 const WASTAGE_INVALID = 'Wastage must be between 0 and 40 per cent.';
 const FABRICS_REQUIRED = 'Assign at least one fabric.';
+const STATUS_INVALID = 'Status must be Draft, In development or Approved.';
 
 const garmentFabricSchema = z.object({
   fabricId: objectIdSchema,
@@ -50,6 +51,11 @@ export const createGarmentBodySchema = z.object({
   copyOperationsFrom: objectIdSchema.optional()
 });
 
+/**
+ * Status is deliberately absent: a style moves through
+ * `POST /garments/:id/approve` and `POST /garments/:id/status`, which hold the transition
+ * rule and the approval record. An edit must never be able to approve a style.
+ */
 export const updateGarmentBodySchema = z
   .object({
     name: requiredString(NAME_REQUIRED).optional(),
@@ -61,10 +67,20 @@ export const updateGarmentBodySchema = z
     garmentType: z.string().trim().min(1).optional(),
     season: z.string().trim().min(1).optional(),
     sizeRange: z.string().trim().min(1).optional(),
-    status: z.enum(GARMENT_STATUSES).optional(),
     description: z.string().trim().optional()
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to update.' });
+
+/**
+ * The move a style is asked to make. Whether it is *allowed* is decided by
+ * `GARMENT_TRANSITIONS` in the service, never by the client.
+ */
+export const garmentStatusBodySchema = z.object({
+  status: z.enum(GARMENT_STATUSES, {
+    required_error: STATUS_INVALID,
+    invalid_type_error: STATUS_INVALID
+  })
+});
 
 /**
  * The library paginates server-side. `limit` goes up to 200 so the screens that need the
@@ -86,5 +102,6 @@ export const calculationQuerySchema = z.object({
 
 export type CreateGarmentBody = z.infer<typeof createGarmentBodySchema>;
 export type UpdateGarmentBody = z.infer<typeof updateGarmentBodySchema>;
+export type GarmentStatusBody = z.infer<typeof garmentStatusBodySchema>;
 export type GarmentListQuery = z.infer<typeof garmentListQuerySchema>;
 export type CalculationQuery = z.infer<typeof calculationQuerySchema>;

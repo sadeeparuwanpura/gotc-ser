@@ -114,15 +114,25 @@ export async function seedDatabase(): Promise<SeedSummary> {
   if (!garmentTech) throw new Error('The garment technician account is missing');
 
   await GarmentModel.insertMany(
-    GARMENTS.map((garment) => ({
-      ...garment,
-      fabrics: garment.fabrics.map((entry) => {
-        const fabric = fabricByName.get(entry.name);
-        if (!fabric) throw new Error(`Unknown fabric ${entry.name}`);
-        return { fabric: fabric._id, parts: entry.parts };
-      }),
-      createdBy: garmentTech._id
-    }))
+    GARMENTS.map(({ approvedByEmail, approvedAt, ...garment }) => {
+      // The approval date is demonstration data, so it is set rather than stamped —
+      // the same way a seeded order carries its decision date.
+      const approvedBy = approvedByEmail ? userByEmail.get(approvedByEmail) ?? null : null;
+      if (approvedByEmail && !approvedBy) throw new Error(`Unknown approver ${approvedByEmail}`);
+
+      return {
+        ...garment,
+        fabrics: garment.fabrics.map((entry) => {
+          const fabric = fabricByName.get(entry.name);
+          if (!fabric) throw new Error(`Unknown fabric ${entry.name}`);
+          return { fabric: fabric._id, parts: entry.parts };
+        }),
+        createdBy: garmentTech._id,
+        approvedBy: approvedBy?._id ?? null,
+        approvedByName: approvedBy?.name ?? null,
+        approvedAt: approvedAt ? new Date(approvedAt) : null
+      };
+    })
   );
 
   const garments = await GarmentModel.find();

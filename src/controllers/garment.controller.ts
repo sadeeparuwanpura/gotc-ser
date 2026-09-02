@@ -3,15 +3,18 @@ import {
   calculationQuerySchema,
   createGarmentBodySchema,
   garmentListQuerySchema,
+  garmentStatusBodySchema,
   updateGarmentBodySchema
 } from '../schemas/garment.schema';
 import {
+  approveGarment,
   createGarment,
   deleteGarment,
   duplicateGarment,
   getGarment,
   listGarments,
   nextStyleNumber,
+  setGarmentStatus,
   updateGarment
 } from '../services/garment.service';
 import { calculateForGarment } from '../services/calculation.service';
@@ -43,6 +46,17 @@ export const patchGarment = asyncHandler(async (req, res) => {
   const { id } = idParamSchema.parse(req.params);
   const body = updateGarmentBodySchema.parse(req.body);
   res.status(200).json(await updateGarment(id, body));
+});
+
+export const postApproveGarment = asyncHandler(async (req, res) => {
+  const { id } = idParamSchema.parse(req.params);
+  res.status(200).json(await approveGarment(id, authContext(req)));
+});
+
+export const postGarmentStatus = asyncHandler(async (req, res) => {
+  const { id } = idParamSchema.parse(req.params);
+  const body = garmentStatusBodySchema.parse(req.body);
+  res.status(200).json(await setGarmentStatus(id, body, authContext(req)));
 });
 
 export const postDuplicate = asyncHandler(async (req, res) => {

@@ -141,6 +141,8 @@ export interface GarmentListItem {
   season: string;
   orderQuantity: number;
   status: GarmentStatus;
+  /** Null unless the style is approved. */
+  approvedByName: string | null;
   operationCount: number;
   machineTypesUsed: MachineTypeToken[];
   /** PER_THREAD preview; null when nothing is assignable. */
@@ -177,6 +179,10 @@ export interface GarmentDTO {
   wastagePercent: number;
   description: string;
   fabrics: GarmentFabricDTO[];
+  /** The three approval fields are null together — reopening a style clears them. */
+  approvedBy: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

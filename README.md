@@ -86,6 +86,16 @@ src/
 
 **Success** bodies are the payload, bare: `200` read/update, `201` create, `204` delete.
 
+**Every list endpoint pages** and answers in the same envelope:
+
+```json
+{ "items": [ … ], "total": 132, "page": 1, "limit": 25 }
+```
+
+`?page=` (default 1), `?limit=` (default 25, max 200 — beyond it is a `422`) and `?q=`
+searching server-side. `/garments` adds `operationTotal`; `/orders` adds `counts` and
+`totals`.
+
 **Every** failure — thrown, rejected, zod, Mongoose, duplicate key — leaves through one
 middleware in one shape:
 

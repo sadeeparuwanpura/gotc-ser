@@ -5,8 +5,10 @@ import {
   getGarments,
   getNextStyleNumber,
   patchGarment,
+  postApproveGarment,
   postDuplicate,
   postGarment,
+  postGarmentStatus,
   removeGarment
 } from '../controllers/garment.controller';
 import {
@@ -31,6 +33,8 @@ garmentRouter.get('/:id/operations', getOperations);
 garmentRouter.post('/:id/operations', requirePermission('operations'), postOperation);
 garmentRouter.patch('/:id/operations/order', requirePermission('operations'), patchOperationOrder);
 garmentRouter.post('/:id/duplicate', requirePermission('info'), postDuplicate);
+garmentRouter.post('/:id/approve', requirePermission('approve'), postApproveGarment);
+garmentRouter.post('/:id/status', requirePermission('approve'), postGarmentStatus);
 garmentRouter.get('/:id', getGarmentById);
 garmentRouter.patch('/:id', requirePermission('info'), patchGarment);
 garmentRouter.delete('/:id', requirePermission('info'), removeGarment);

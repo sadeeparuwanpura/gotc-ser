@@ -188,6 +188,9 @@ export interface SeedGarment {
   wastagePercent: number;
   description: string;
   fabrics: { name: string; parts: string[] }[];
+  /** Only an approved style carries these, and it carries both. */
+  approvedByEmail?: string;
+  approvedAt?: string;
 }
 
 export const GARMENTS: SeedGarment[] = [
@@ -206,7 +209,9 @@ export const GARMENTS: SeedGarment[] = [
       { name: 'Single Jersey 30s', parts: ['Body', 'Sleeve'] },
       { name: 'Rib 1×1', parts: ['Neckband'] },
       { name: 'Twill Tape 12mm', parts: ['Neck tape'] }
-    ]
+    ],
+    approvedByEmail: 'r.fernando@factory.lk',
+    approvedAt: '2026-08-15T00:00:00.000Z'
   },
   {
     name: "Men's Piqué Polo",
