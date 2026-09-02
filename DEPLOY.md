@@ -8,6 +8,34 @@ secrets. Everything else is already set.
 
 ---
 
+## 0. If the service already exists: fix these two settings first
+
+**`render.yaml` is only read when the service is created as a Blueprint.** A Web Service made
+by hand ignores it completely and keeps Render's defaults — and the default build command is a
+bare `npm install`, which installs packages but never compiles anything. The service then
+starts against a `dist/` that was never created:
+
+```
+==> Running build command 'npm install'...
+==> Running 'node dist/index.js'
+Error: Cannot find module '/opt/render/project/src/dist/index.js'
+```
+
+Nothing you push can override a dashboard setting. Go to **Settings** and set:
+
+| Field | Value |
+|---|---|
+| **Build Command** | `npm install --include=dev && npm run build` |
+| **Start Command** | `npm start` |
+| **Health Check Path** | `/api/health` |
+
+Then **Manual Deploy → Clear build cache & deploy**.
+
+`--include=dev` matters once `NODE_ENV=production` is set: npm skips `devDependencies` in
+production, and TypeScript is one, so the build would fail with `tsc: not found`.
+
+To use `render.yaml` instead, delete the service and recreate it via **New → Blueprint**.
+
 ## 1. Create the service
 
 Render dashboard → **New** → **Blueprint** → pick this repository.

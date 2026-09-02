@@ -6,9 +6,13 @@
 #
 # Two things here are load-bearing and easy to get wrong by hand:
 #
-#   1. `npm ci --include=dev` — Render sets NODE_ENV=production during the build because it
-#      is declared below, and npm then SKIPS devDependencies. TypeScript is a devDependency,
-#      so a plain `npm ci` gives you "tsc: not found" and a failed build.
+#   1. `--include=dev` — Render sets NODE_ENV=production during the build because it is
+#      declared below, and npm then SKIPS devDependencies. TypeScript is a devDependency, so
+#      without this flag the build fails with "tsc: not found".
+#
+#      And note the build command must run `npm run build` at all: Render's DEFAULT build
+#      command is a bare `npm install`, which never compiles anything, so the service starts
+#      against a dist/ that was never created.
 #
 #   2. MONGOMS_DISABLE_POSTINSTALL — `mongodb-memory-server` is a devDependency whose
 #      postinstall downloads a ~100 MB mongod binary. It is only used by the test suite and
@@ -22,7 +26,7 @@ services:
     # Closest region to the factory; change if you prefer.
     region: singapore
 
-    buildCommand: npm ci --include=dev && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
 
     # The server answers this without touching the database, so a cold instance still passes.
