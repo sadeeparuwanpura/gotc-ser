@@ -9,7 +9,11 @@ export default defineConfig({
     hookTimeout: 180_000,
     // One database, one seeded factory: the suites run in sequence, not in parallel.
     fileParallelism: false,
-    env: { NODE_ENV: 'test' },
+    env: {
+      NODE_ENV: 'test',
+      // Exercises both an exact origin and the subdomain wildcard.
+      CLIENT_ORIGIN: 'https://gotc-clie.vercel.app,https://*.vercel.app'
+    },
     reporters: ['default']
   }
 });

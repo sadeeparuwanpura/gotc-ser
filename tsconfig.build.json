@@ -1,0 +1,5 @@
+{
+  "//": "The production build. Same compiler options, but the test suite is left out of dist/ — it would otherwise drag vitest, supertest and mongodb-memory-server types into a deploy that has no use for them.",
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/test/**"]
+}
