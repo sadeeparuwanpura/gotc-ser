@@ -21,7 +21,13 @@ starts against a `dist/` that was never created:
 Error: Cannot find module '/opt/render/project/src/dist/index.js'
 ```
 
-Nothing you push can override a dashboard setting. Go to **Settings** and set:
+A `postinstall` hook (`scripts/postinstall-build.mjs`) compiles the server after
+`npm install`, so a host left on its default build command still produces a runnable
+`dist/`. **That is a safety net, not the fix** — it stops working the moment
+`NODE_ENV=production` is set, because npm then skips `devDependencies` and there is no
+compiler to run. The script says so in the build log rather than failing silently.
+
+Go to **Settings** and set:
 
 | Field | Value |
 |---|---|
