@@ -1,0 +1,57 @@
+# Render Blueprint for the GOTC API.
+#
+# Deploy: Render dashboard → New → Blueprint → point at this repository.
+# Render reads this file, creates the service, and prompts for the two secrets marked
+# `sync: false`.
+#
+# Two things here are load-bearing and easy to get wrong by hand:
+#
+#   1. `npm ci --include=dev` — Render sets NODE_ENV=production during the build because it
+#      is declared below, and npm then SKIPS devDependencies. TypeScript is a devDependency,
+#      so a plain `npm ci` gives you "tsc: not found" and a failed build.
+#
+#   2. MONGOMS_DISABLE_POSTINSTALL — `mongodb-memory-server` is a devDependency whose
+#      postinstall downloads a ~100 MB mongod binary. It is only used by the test suite and
+#      would otherwise be fetched on every deploy.
+
+services:
+  - type: web
+    name: gotc-api
+    runtime: node
+    plan: free
+    # Closest region to the factory; change if you prefer.
+    region: singapore
+
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+
+    # The server answers this without touching the database, so a cold instance still passes.
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render injects PORT itself; src/config/env.ts already reads it.
+
+      - key: CLIENT_ORIGIN
+        # The deployed front end, plus every Vercel preview subdomain.
+        value: https://gotc-clie.vercel.app,https://*.vercel.app
+
+      - key: COOKIE_NAME
+        value: gotc_session
+
+      - key: LOG_LEVEL
+        value: info
+
+      - key: MONGOMS_DISABLE_POSTINSTALL
+        value: "1"
+
+      # --- secrets: Render prompts for these, they are never committed ----------------
+      - key: MONGODB_URI
+        sync: false
+
+      - key: JWT_SECRET
+        # Render generates a long random value. If the service exits at boot with
+        # "JWT_SECRET must be at least 32 characters", paste your own instead.
+        generateValue: true

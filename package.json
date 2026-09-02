@@ -14,6 +14,9 @@
     "seed": "tsx src/seed/seed.ts",
     "seed:reset": "tsx src/seed/seed.ts --reset"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
