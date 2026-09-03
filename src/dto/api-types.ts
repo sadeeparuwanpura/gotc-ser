@@ -96,6 +96,11 @@ export interface MachinePositionDTO {
   consumptionRatio: number;
 }
 
+export interface MachineTypeUsage {
+  operations: number;
+  styles: number;
+}
+
 export interface MachineTypeDTO {
   id: string;
   name: string;
@@ -105,6 +110,8 @@ export interface MachineTypeDTO {
   /** The summed position counts — "<n> threads" on the card header. */
   totalThreads: number;
   active: boolean;
+  /** Operations and distinct styles sitting on this machine type. */
+  usage: MachineTypeUsage;
 }
 
 export type MachineTypeListResponse = Paginated<MachineTypeDTO>;

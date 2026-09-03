@@ -11,7 +11,40 @@ import type {
   UpdatePositionRatioBody
 } from '../schemas/machine-type.schema';
 
-export function toMachineTypeDTO(machineType: MachineTypeDocument): MachineTypeDTO {
+interface MachineUsage {
+  operations: number;
+  styles: number;
+}
+
+const NO_USAGE: MachineUsage = { operations: 0, styles: 0 };
+
+/**
+ * How many operations — and how many distinct styles — sit on each machine type.
+ *
+ * The client needs this to warn before a positions edit, which silently voids every thread
+ * assignment on that machine, and to explain a refused delete before it is attempted.
+ */
+async function usageByMachineType(): Promise<Map<string, MachineUsage>> {
+  const rows = await OperationModel.aggregate<{
+    _id: Types.ObjectId | null;
+    operations: number;
+    styles: Types.ObjectId[];
+  }>([
+    { $match: { machineType: { $ne: null } } },
+    { $group: { _id: '$machineType', operations: { $sum: 1 }, styles: { $addToSet: '$garment' } } }
+  ]);
+
+  return new Map(
+    rows
+      .filter((row): row is typeof row & { _id: Types.ObjectId } => row._id !== null)
+      .map((row) => [row._id.toHexString(), { operations: row.operations, styles: row.styles.length }])
+  );
+}
+
+export function toMachineTypeDTO(
+  machineType: MachineTypeDocument,
+  usage: MachineUsage = NO_USAGE
+): MachineTypeDTO {
   return {
     id: machineType._id.toHexString(),
     name: machineType.name,
@@ -24,27 +57,41 @@ export function toMachineTypeDTO(machineType: MachineTypeDocument): MachineTypeD
       consumptionRatio: position.consumptionRatio
     })),
     totalThreads: machineType.positions.reduce((total, position) => total + position.count, 0),
-    active: machineType.active
+    active: machineType.active,
+    usage
   };
 }
 
 export async function listMachineTypes(query: ListQuery): Promise<MachineTypeListResponse> {
   const filter = searchAcross(['name', 'code'], query.q);
 
-  const [machineTypes, total] = await Promise.all([
+  const [machineTypes, total, usage] = await Promise.all([
     MachineTypeModel.find(filter)
       .sort({ code: 1 })
       .skip((query.page - 1) * query.limit)
       .limit(query.limit),
-    MachineTypeModel.countDocuments(filter)
+    MachineTypeModel.countDocuments(filter),
+    usageByMachineType()
   ]);
 
   return {
-    items: machineTypes.map(toMachineTypeDTO),
+    items: machineTypes.map((machineType) =>
+      toMachineTypeDTO(machineType, usage.get(machineType._id.toHexString()) ?? NO_USAGE)
+    ),
     total,
     page: query.page,
     limit: query.limit
   };
+}
+
+/** Re-reads usage for one machine — used after a write so the row stays honest. */
+async function usageFor(machineTypeId: Types.ObjectId): Promise<MachineUsage> {
+  const rows = await OperationModel.aggregate<{ _id: null; operations: number; styles: Types.ObjectId[] }>([
+    { $match: { machineType: machineTypeId } },
+    { $group: { _id: null, operations: { $sum: 1 }, styles: { $addToSet: '$garment' } } }
+  ]);
+  const row = rows[0];
+  return row ? { operations: row.operations, styles: row.styles.length } : NO_USAGE;
 }
 
 async function assertIdentityIsFree(
@@ -69,6 +116,7 @@ export async function createMachineType(body: CreateMachineTypeBody): Promise<Ma
     positions: body.positions,
     active: body.active ?? true
   });
+  // Nothing can be using a machine type that has just been created.
   return toMachineTypeDTO(machineType);
 }
 
@@ -98,7 +146,7 @@ export async function updateMachineType(
   }
 
   await machineType.save();
-  return toMachineTypeDTO(machineType);
+  return toMachineTypeDTO(machineType, await usageFor(machineType._id));
 }
 
 /** The inline consumption-ratio edit on the machine-types screen. */
@@ -120,7 +168,7 @@ export async function updatePositionRatio(
   // Changing a ratio recalculates every operation on that machine type, on every garment.
   position.consumptionRatio = body.consumptionRatio;
   await machineType.save();
-  return toMachineTypeDTO(machineType);
+  return toMachineTypeDTO(machineType, await usageFor(machineType._id));
 }
 
 export async function deleteMachineType(id: string): Promise<void> {
