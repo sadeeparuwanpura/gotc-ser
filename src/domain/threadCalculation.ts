@@ -85,6 +85,16 @@ export interface ThreadRollupEntry {
   thread: Thread;
   metresPerGarment: number;
   consumers: ThreadConsumer[];
+  /**
+   * How many cones of this thread must be **mounted at once**.
+   *
+   * A cone feeds one position. A double-needle machine running the same thread on both
+   * needles needs two cones standing on it, however little thread the job consumes — you
+   * cannot feed two needles from one cone. The style is sewn in continuous flow, so every
+   * machine on the line is threaded simultaneously and the requirement is the sum of the
+   * position counts across every operation, not the largest single one.
+   */
+  threadingCones: number;
 }
 
 export interface OrderScaling {
@@ -110,6 +120,9 @@ export interface CalculationThread {
   metresOrder: number;
   metresWithWastage: number;
   rawCones: number;
+  /** Cones needed to thread the line at once — the floor under `cones`. */
+  threadingCones: number;
+  /** What to buy: the greater of consumption and the threading requirement. */
   cones: number;
   consumers: ThreadConsumer[];
 }
@@ -261,12 +274,24 @@ export function rollUpByThread(
 
       let entry = rollup.get(threadId);
       if (!entry) {
-        entry = { threadId, thread, metresPerGarment: 0, consumers: [] };
+        entry = { threadId, thread, metresPerGarment: 0, consumers: [], threadingCones: 0 };
         rollup.set(threadId, entry);
       }
 
       const metres = positionMetres(operation.seamLengthCm, position.consumptionRatio, position.count);
       entry.metresPerGarment += metres;
+
+      /*
+       * One cone per position slot: a two-needle position needs two cones on the machine.
+       *
+       * Only for operations that actually sew, though. A seam length of zero means the
+       * operation has not been filled in yet — the screen shows "must be > 0" under the
+       * field — and a machine that sews nothing is not standing on the line consuming
+       * cones. Without this guard an empty draft operation would demand a cone order.
+       */
+      if (operation.seamLengthCm > 0) {
+        entry.threadingCones += position.count;
+      }
       entry.consumers.push({
         operationId: operation.id,
         sequence: operation.sequence,
@@ -317,20 +342,35 @@ export function rawConeCount(metresWithWastage: number, coneYieldM: number): num
  * why ORDER_TOTAL can report fewer cones than the lines add up to. That difference is the
  * point of the mode and is printed on the sheet.
  */
-export function applyRounding(rawCones: readonly number[], mode: RoundingMode): RoundingResult {
-  const perThread = rawCones.map(ceilCones);
+export function applyRounding(
+  rawCones: readonly number[],
+  mode: RoundingMode,
+  /**
+   * Cones that must be mounted at once, per thread — see `ThreadRollupEntry.threadingCones`.
+   * Consumption alone is not enough: a short run can need less than one cone of thread and
+   * still need two cones on the machine. Omitted (or zero) means no floor applies, which is
+   * what the pure arithmetic vectors in CALCULATIONS.md assert.
+   */
+  threadingCones: readonly number[] = []
+): RoundingResult {
+  const required = rawCones.map((raw, index) =>
+    Math.max(ceilCones(raw), threadingCones[index] ?? 0)
+  );
 
   if (mode === 'PER_THREAD_PLUS_SAFETY') {
-    const cones = perThread.map((count) => count + 1);
+    const cones = required.map((count) => count + 1);
     return { cones, totalCones: cones.reduce((sum, count) => sum + count, 0) };
   }
 
   if (mode === 'ORDER_TOTAL') {
+    // Interchangeable threads can share a ceiling, but the machines still have to be
+    // threaded — the order can never be smaller than the number of cones on the line.
     const rawTotal = rawCones.reduce((sum, value) => sum + value, 0);
-    return { cones: perThread, totalCones: ceilCones(rawTotal) };
+    const threadingTotal = threadingCones.reduce((sum, value) => sum + value, 0);
+    return { cones: required, totalCones: Math.max(ceilCones(rawTotal), threadingTotal) };
   }
 
-  return { cones: perThread, totalCones: perThread.reduce((sum, count) => sum + count, 0) };
+  return { cones: required, totalCones: required.reduce((sum, count) => sum + count, 0) };
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +496,8 @@ export function buildCalculation(input: CalculationInput): Calculation {
 
   const rounded = applyRounding(
     scaled.map((line) => line.rawCones),
-    input.roundingMode
+    input.roundingMode,
+    scaled.map((line) => line.entry.threadingCones)
   );
 
   const threads: CalculationThread[] = scaled
@@ -471,6 +512,7 @@ export function buildCalculation(input: CalculationInput): Calculation {
       metresOrder: roundTo(line.metresOrder, 2),
       metresWithWastage: roundTo(line.metresWithWastage, 2),
       rawCones: roundTo(line.rawCones, 2),
+      threadingCones: line.entry.threadingCones,
       cones: rounded.cones[position] ?? 0,
       consumers: line.entry.consumers.map((consumer) => ({
         ...consumer,

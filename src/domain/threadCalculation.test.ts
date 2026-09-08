@@ -456,14 +456,144 @@ describe('buildCalculation derived flags', () => {
     expect(calculation.threads.map((thread) => [thread.brand, thread.cones])).toEqual([
       ['Surfilor', 145],
       ['Gramax', 142],
-      ['Epic', 2]
+      // Consumption is only 1.35 cones, but Epic is threaded at six positions across the
+      // line — needle + bobbin on two lock-stitch operations and on the bartack — and each
+      // of those machines needs its own cone standing on it.
+      ['Epic', 6]
     ]);
-    expect(calculation.totalCones).toBe(289);
+    expect(calculation.threads.find((thread) => thread.brand === 'Epic')?.threadingCones).toBe(6);
+    expect(calculation.totalCones).toBe(293);
     expect(calculation.totalMetres).toBeCloseTo(1439047.68, 2);
   });
 
   it('guards a zero cone yield instead of returning Infinity', () => {
     expect(rawConeCount(1000, 0)).toBe(1000);
     expect(Number.isFinite(rawConeCount(1000, 0))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The threading floor — a cone feeds one position at a time
+// ---------------------------------------------------------------------------
+
+describe('threading floor', () => {
+  /**
+   * The factory's own example. A Double Needle Flatlock with a different thread at each
+   * position, on a short sample run: consumption is a fraction of a 2,500 m cone, but the
+   * machine still needs two cones of Epic standing on it because both needles run at once.
+   */
+  const FLATLOCK: MachineType = {
+    id: 'dnfl',
+    name: 'Double Needle Flatlock',
+    code: 'FL-2N',
+    colour: '#17795A',
+    positions: [
+      { id: 'dnfl-NEEDLE', position: 'NEEDLE', count: 2, consumptionRatio: 5.0 },
+      { id: 'dnfl-UPPER_LOOPER', position: 'UPPER_LOOPER', count: 1, consumptionRatio: 8.0 },
+      { id: 'dnfl-LOWER_LOOPER', position: 'LOWER_LOOPER', count: 1, consumptionRatio: 8.0 }
+    ]
+  };
+
+  const EPIC_120: Thread = { ...EPIC, coneYieldM: 2500 };
+  const GRAMAX_120: Thread = { ...GRAMAX, ticket: 120, coneYieldM: 2500 };
+  const SURFILOR_120: Thread = { ...SURFILOR, coneYieldM: 2500 };
+  const SMALL_CONES = [EPIC_120, GRAMAX_120, SURFILOR_120];
+
+  const flatlockOperation = op('f1', 1, 'Attach rib cuff', 'dnfl', 40, {
+    'dnfl-NEEDLE': 't3', // 120 Epic on both needles
+    'dnfl-UPPER_LOOPER': 't1', // 120 Gramax
+    'dnfl-LOWER_LOOPER': 't2' // 120 Surfilor
+  });
+
+  it('needs one cone per position slot, even when consumption is under one cone', () => {
+    const calculation = buildCalculation({
+      operations: [flatlockOperation],
+      machineTypes: [FLATLOCK],
+      threads: SMALL_CONES,
+      quantity: 200,
+      wastagePercent: 12,
+      roundingMode: 'PER_THREAD'
+    });
+
+    const byThread = (id: string) => calculation.threads.find((thread) => thread.threadId === id);
+
+    const epic = byThread('t3');
+    const gramax = byThread('t1');
+    const surfilor = byThread('t2');
+
+    // Two needles at 5.0 over 40 cm: 0.4 × 5 × 2 = 4 m per garment, 200 pcs + 12% = 896 m.
+    expect(epic?.metresPerGarment).toBeCloseTo(4, 6);
+    expect(epic?.metresWithWastage).toBeCloseTo(896, 6);
+    // Well under one 2,500 m cone…
+    expect(epic?.rawCones).toBeLessThan(1);
+    // …but both needles run at the same time, so two cones must be on the machine.
+    expect(epic?.threadingCones).toBe(2);
+    expect(epic?.cones).toBe(2);
+
+    // One looper each, so one cone each.
+    expect(gramax?.threadingCones).toBe(1);
+    expect(gramax?.cones).toBe(1);
+    expect(surfilor?.threadingCones).toBe(1);
+    expect(surfilor?.cones).toBe(1);
+
+    // "2 – 120 Epic, 1 – 120 Gramax, 1 – 120 Surfilor" — four cones on one machine.
+    expect(calculation.totalCones).toBe(4);
+  });
+
+  it('consumption still wins once the run is long enough', () => {
+    const calculation = buildCalculation({
+      operations: [flatlockOperation],
+      machineTypes: [FLATLOCK],
+      threads: SMALL_CONES,
+      quantity: 100_000,
+      wastagePercent: 12,
+      roundingMode: 'PER_THREAD'
+    });
+
+    const epic = calculation.threads.find((thread) => thread.threadId === 't3');
+    // 4 m × 100,000 × 1.12 = 448,000 m ÷ 2,500 = 179.2 → 180 cones, far above the floor of 2.
+    expect(epic?.rawCones).toBeCloseTo(179.2, 4);
+    expect(epic?.threadingCones).toBe(2);
+    expect(epic?.cones).toBe(180);
+  });
+
+  it('sums the slots across every operation — the whole line is threaded at once', () => {
+    const second = op('f2', 2, 'Attach rib hem', 'dnfl', 60, {
+      'dnfl-NEEDLE': 't3',
+      'dnfl-UPPER_LOOPER': 't1',
+      'dnfl-LOWER_LOOPER': 't2'
+    });
+
+    const calculation = buildCalculation({
+      operations: [flatlockOperation, second],
+      machineTypes: [FLATLOCK],
+      threads: SMALL_CONES,
+      quantity: 200,
+      wastagePercent: 12,
+      roundingMode: 'PER_THREAD'
+    });
+
+    // Two flatlocks on the line, two needles each: four cones of Epic mounted.
+    expect(calculation.threads.find((t) => t.threadId === 't3')?.cones).toBe(4);
+    expect(calculation.threads.find((t) => t.threadId === 't1')?.cones).toBe(2);
+    expect(calculation.threads.find((t) => t.threadId === 't2')?.cones).toBe(2);
+    expect(calculation.totalCones).toBe(8);
+  });
+
+  it('applies the floor in applyRounding, and leaves the pinned vectors alone', () => {
+    // No floor given: exactly the behaviour CALCULATIONS.md pins.
+    expect(applyRounding([144.94, 60.2, 3.1], 'PER_THREAD').totalCones).toBe(210);
+    expect(applyRounding([144.94, 60.2, 3.1], 'ORDER_TOTAL').totalCones).toBe(209);
+
+    // A floor lifts a thread whose consumption is tiny, and nothing else.
+    const withFloor = applyRounding([144.94, 60.2, 0.04], 'PER_THREAD', [2, 1, 6]);
+    expect(withFloor.cones).toEqual([145, 61, 6]);
+    expect(withFloor.totalCones).toBe(212);
+
+    // The safety spare sits on top of whichever requirement won.
+    expect(applyRounding([0.04], 'PER_THREAD_PLUS_SAFETY', [3]).cones).toEqual([4]);
+
+    // ORDER_TOTAL can pool interchangeable threads, but never below the cones on the line.
+    expect(applyRounding([0.1, 0.1], 'ORDER_TOTAL', [4, 2]).totalCones).toBe(6);
   });
 });

@@ -20,6 +20,8 @@ export interface OrderLineAttrs {
   metresOrder: number;
   metresWithWastage: number;
   rawCones: number;
+  /** Cones that must stand on the line at once — one per position slot. */
+  threadingCones: number;
   cones: number;
 }
 
@@ -61,6 +63,8 @@ const OrderLineSchema = new Schema<OrderLineAttrs>(
     metresOrder: { type: Number, required: true },
     metresWithWastage: { type: Number, required: true },
     rawCones: { type: Number, required: true },
+    // Older orders predate the threading floor, so this is not required on read.
+    threadingCones: { type: Number, default: 0 },
     cones: { type: Number, required: true }
   },
   { _id: false }

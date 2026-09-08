@@ -209,6 +209,7 @@ export async function seedDatabase(): Promise<SeedSummary> {
         metresOrder: thread.metresOrder,
         metresWithWastage: thread.metresWithWastage,
         rawCones: thread.rawCones,
+        threadingCones: thread.threadingCones,
         cones: thread.cones
       })),
       rows: buildOrderRows(context),

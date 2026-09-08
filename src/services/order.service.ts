@@ -59,6 +59,7 @@ export function toOrderDTO(order: ConeOrderDocument): OrderDTO {
       metresOrder: line.metresOrder,
       metresWithWastage: line.metresWithWastage,
       rawCones: line.rawCones,
+      threadingCones: line.threadingCones ?? 0,
       cones: line.cones
     })),
     rows: order.rows.map((row) => ({
@@ -172,6 +173,7 @@ export async function createOrder(body: CreateOrderBody, actor: AuthContext): Pr
     metresOrder: thread.metresOrder,
     metresWithWastage: thread.metresWithWastage,
     rawCones: thread.rawCones,
+    threadingCones: thread.threadingCones,
     cones: thread.cones
   }));
 

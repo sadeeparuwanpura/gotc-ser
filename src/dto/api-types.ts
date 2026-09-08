@@ -239,6 +239,8 @@ export interface OrderLineDTO {
   metresOrder: number;
   metresWithWastage: number;
   rawCones: number;
+  /** Cones that must stand on the line at once — one per position slot. */
+  threadingCones: number;
   cones: number;
 }
 
