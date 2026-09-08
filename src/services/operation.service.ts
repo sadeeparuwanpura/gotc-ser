@@ -3,6 +3,7 @@ import { GarmentModel } from '../models/garment.model';
 import { OperationModel, type OperationDocument } from '../models/operation.model';
 import { ThreadModel } from '../models/thread.model';
 import {
+  formatPositionSpecs,
   formatThreadSummary,
   isOperationComplete,
   operationMetres,
@@ -48,6 +49,13 @@ function toDTO(operation: OperationDocument, master: MasterData): OperationDTO {
     isComplete: isOperationComplete(domain, machineType),
     operationMetres: roundTo(operationMetres(domain, machineType), 2),
     threadSummary: formatThreadSummary(domain, machineType, master.threads),
+    /*
+     * The same upper-cased cells the cone order prints, from the same formatter — so the
+     * operation breakdown and the cone order can never describe a position differently.
+     * An unassigned position formats as "—", which is why adding this to the breakdown
+     * sheet does not make it depend on thread data: it still prints when incomplete.
+     */
+    threadCells: formatPositionSpecs(domain, machineType, master.threads, { upper: true }),
     positions: sortPositions(machineType).map((position) => ({
       id: position.id,
       position: position.position,

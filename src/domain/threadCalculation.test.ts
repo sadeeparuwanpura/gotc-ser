@@ -395,6 +395,21 @@ describe('formatPositionSpecs', () => {
     );
   });
 
+  it('prints an em dash for an unassigned position, so the breakdown sheet still works', () => {
+    // The operation breakdown now carries THREAD VARIETY columns, and the spec requires that
+    // sheet to remain available while thread assignment is incomplete. These are the cells it
+    // renders: a missing thread must format, not throw or vanish.
+    const partial = op('o1', 1, 'Join the shoulder', 'ol4', 42, { 'ol4-NEEDLE': 't1' });
+    expect(formatPositionSpecs(partial, OL4, THREADS, { upper: true })).toEqual([
+      'LOOPER - 2 - —',
+      'NEEDLE - 2 - 160 GRAMAX'
+    ]);
+
+    // No machine type yet: no cells at all, so the columns simply stay empty.
+    const bare = op('o2', 2, 'Unnamed', null, 0, {});
+    expect(formatPositionSpecs(bare, null, THREADS, { upper: true })).toEqual([]);
+  });
+
   it('returns nothing when no machine type is selected', () => {
     const operation = op('o1', 1, 'Unnamed', null, 42, {});
     expect(formatPositionSpecs(operation, null, THREADS, { upper: false })).toEqual([]);

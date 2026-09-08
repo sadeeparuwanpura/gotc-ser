@@ -222,6 +222,11 @@ export interface OperationDTO {
   isComplete: boolean;
   operationMetres: number;
   threadSummary: string;
+  /**
+   * The printed THREAD VARIETY cells — `LOOPER - 2 - 120 SURFILOR` — one per position slot.
+   * An unassigned position reads "—", so a sheet using these still prints when incomplete.
+   */
+  threadCells: string[];
   /** The machine type's positions inlined, so the expanded panel needs no extra call. */
   positions: OperationPositionDTO[];
 }

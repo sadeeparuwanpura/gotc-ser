@@ -179,3 +179,57 @@ Also deliberately absent, and worth a ticket when they matter:
   clears the maps rather than leaving dangling keys. The single-position ratio endpoint
   (`PATCH /machine-types/:id/positions/:positionId`), which the UI actually uses, does not.
 - **Rate limiting** is on `POST /auth/login` only.
+
+## A cone feeds one position — the threading floor
+
+`CALCULATIONS.md` defines cones purely as consumption: `cones = ceil(metres ÷ coneYield)`.
+That is incomplete, and the factory corrected it.
+
+**A cone can only feed one position at a time.** A Double Needle Flatlock running 120 Epic on
+both needles needs **two cones of Epic standing on the machine**, even when the whole job
+consumes a third of one cone. The order has to cover the threads that are physically mounted,
+not just the thread that gets used up.
+
+So each thread now carries a second requirement:
+
+```
+threadingCones = Σ position.count, over every operation using that thread
+cones          = max(ceil(metresWithWastage ÷ coneYieldM), threadingCones)
+```
+
+The style is sewn in **continuous flow** — every machine on the line is threaded at the same
+time — so the floor is the *sum* of the position slots across all operations, not the largest
+single machine. Two flatlocks each running Epic on two needles is four cones, not two.
+
+The factory's worked example, which is pinned as a test:
+
+| Thread | Consumption | Threaded at | Cones |
+|---|---|---|---|
+| 120 Epic | 896 m = 0.36 cones | 2 needles | **2** |
+| 120 Gramax | 717 m = 0.29 cones | 1 upper looper | **1** |
+| 120 Surfilor | 717 m = 0.29 cones | 1 lower looper | **1** |
+
+Four cones on one machine, from a job that consumes less than one.
+
+### What this does and does not change
+
+- **Long runs are unaffected.** Consumption is almost always the larger number; the floor only
+  binds on samples and short runs, which is exactly where the old figure was wrong.
+- **`applyRounding` takes the floor as an optional third argument**, defaulting to none, so
+  every pure-arithmetic vector in `CALCULATIONS.md` still asserts exactly what it did.
+- **`PER_THREAD_PLUS_SAFETY`** adds its spare cone on top of whichever requirement won.
+- **`ORDER_TOTAL`** may pool interchangeable threads, but its total can never fall below the
+  number of cones standing on the line.
+- **A seam length of zero contributes nothing.** An operation with no seam length has not been
+  filled in — the screen shows "must be > 0" — and a machine that sews nothing is not on the
+  line. Without that guard an empty draft row would demand a cone order. This is what keeps
+  test vector 9 ("zero seam length yields 0 metres") at zero cones.
+- **Existing order snapshots are untouched.** They are frozen by design; `threadingCones`
+  defaults to 0 on records written before this rule existed.
+
+The thread-requirement table says which rule decided each number, because
+`0.09 → 2 cones` looks like an arithmetic bug otherwise:
+
+```
+5 m ÷ 50 m = 0.09 → 2 cones · 2 positions threaded at once
+```

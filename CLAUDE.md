@@ -8,6 +8,12 @@ wastage, or calls `Math.ceil` on a cone count. The garment screen, the thread-re
 table, the printed cone order and the register must never be able to disagree. The client
 displays what `GET /garments/:id/calculation` and the order snapshot return.
 
+**Cones are not consumption alone.** A cone feeds one position at a time, so every thread also
+carries a *threading floor* — one cone per position slot, summed across the line, because the
+style is sewn in continuous flow:
+`cones = max(ceil(metres ÷ coneYield), threadingCones)`. A two-needle machine needs two cones
+of a thread however little it consumes. See NOTES.md §"A cone feeds one position".
+
 ## Conventions
 
 - TypeScript `strict: true`, plus `noUncheckedIndexedAccess`. No `any` in domain or API code;
