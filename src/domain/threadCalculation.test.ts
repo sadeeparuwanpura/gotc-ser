@@ -471,13 +471,14 @@ describe('buildCalculation derived flags', () => {
     expect(calculation.threads.map((thread) => [thread.brand, thread.cones])).toEqual([
       ['Surfilor', 145],
       ['Gramax', 142],
-      // Consumption is only 1.35 cones, but Epic is threaded at six positions across the
-      // line — needle + bobbin on two lock-stitch operations and on the bartack — and each
-      // of those machines needs its own cone standing on it.
-      ['Epic', 6]
+      // Consumption is only 1.35 cones, but Epic is threaded at four positions across the
+      // line — needle + bobbin on the lock stitch, needle + bobbin on the bartack — and each
+      // of those machines needs its own cone standing on it. Operations 5 and 6 are both on
+      // the one lock stitch, so that machine is counted once, not twice.
+      ['Epic', 4]
     ]);
-    expect(calculation.threads.find((thread) => thread.brand === 'Epic')?.threadingCones).toBe(6);
-    expect(calculation.totalCones).toBe(293);
+    expect(calculation.threads.find((thread) => thread.brand === 'Epic')?.threadingCones).toBe(4);
+    expect(calculation.totalCones).toBe(291);
     expect(calculation.totalMetres).toBeCloseTo(1439047.68, 2);
   });
 
@@ -572,7 +573,7 @@ describe('threading floor', () => {
     expect(epic?.cones).toBe(180);
   });
 
-  it('sums the slots across every operation — the whole line is threaded at once', () => {
+  it('counts a repeated machine once — re-using it is not a second machine', () => {
     const second = op('f2', 2, 'Attach rib hem', 'dnfl', 60, {
       'dnfl-NEEDLE': 't3',
       'dnfl-UPPER_LOOPER': 't1',
@@ -588,11 +589,42 @@ describe('threading floor', () => {
       roundingMode: 'PER_THREAD'
     });
 
-    // Two flatlocks on the line, two needles each: four cones of Epic mounted.
-    expect(calculation.threads.find((t) => t.threadId === 't3')?.cones).toBe(4);
-    expect(calculation.threads.find((t) => t.threadId === 't1')?.cones).toBe(2);
-    expect(calculation.threads.find((t) => t.threadId === 't2')?.cones).toBe(2);
-    expect(calculation.totalCones).toBe(8);
+    const epic = calculation.threads.find((t) => t.threadId === 't3');
+    // One flatlock sewing two operations still has two needles: two cones of Epic, not four.
+    expect(epic?.threadingCones).toBe(2);
+    expect(epic?.cones).toBe(2);
+    // Consumption is untouched by the rule — it is still summed over both operations.
+    expect(epic?.metresPerGarment).toBeCloseTo(10, 6);
+
+    expect(calculation.threads.find((t) => t.threadId === 't1')?.cones).toBe(1);
+    expect(calculation.threads.find((t) => t.threadId === 't2')?.cones).toBe(1);
+    expect(calculation.totalCones).toBe(4);
+  });
+
+  it('counts a slot again when a later operation re-threads it', () => {
+    // Same flatlock, same two needles, but running Gramax for this one.
+    const rethreaded = op('f3', 2, 'Attach rib hem', 'dnfl', 60, {
+      'dnfl-NEEDLE': 't1',
+      'dnfl-UPPER_LOOPER': 't1',
+      'dnfl-LOWER_LOOPER': 't2'
+    });
+
+    const calculation = buildCalculation({
+      operations: [flatlockOperation, rethreaded],
+      machineTypes: [FLATLOCK],
+      threads: SMALL_CONES,
+      quantity: 200,
+      wastagePercent: 12,
+      roundingMode: 'PER_THREAD'
+    });
+
+    // Epic keeps the two needle cones it had…
+    expect(calculation.threads.find((t) => t.threadId === 't3')?.threadingCones).toBe(2);
+    // …and Gramax needs two of its own for those needles, on top of the upper looper it
+    // already sat on. One cone feeds one position: a re-thread cannot share Epic's cones.
+    expect(calculation.threads.find((t) => t.threadId === 't1')?.threadingCones).toBe(3);
+    expect(calculation.threads.find((t) => t.threadId === 't2')?.threadingCones).toBe(1);
+    expect(calculation.totalCones).toBe(6);
   });
 
   it('applies the floor in applyRounding, and leaves the pinned vectors alone', () => {

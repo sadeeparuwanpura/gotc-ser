@@ -12,7 +12,10 @@ displays what `GET /garments/:id/calculation` and the order snapshot return.
 carries a *threading floor* — one cone per position slot, summed across the line, because the
 style is sewn in continuous flow:
 `cones = max(ceil(metres ÷ coneYield), threadingCones)`. A two-needle machine needs two cones
-of a thread however little it consumes. See NOTES.md §"A cone feeds one position".
+of a thread however little it consumes. **Each machine counts once**, however many operations
+run on it — repeating a machine down the sequence is the same machine used again, not another
+one on the line. Consumption is still summed per operation.
+See NOTES.md §"A cone feeds one position".
 
 ## Conventions
 

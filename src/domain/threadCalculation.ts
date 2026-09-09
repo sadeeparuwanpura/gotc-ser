@@ -90,9 +90,12 @@ export interface ThreadRollupEntry {
    *
    * A cone feeds one position. A double-needle machine running the same thread on both
    * needles needs two cones standing on it, however little thread the job consumes — you
-   * cannot feed two needles from one cone. The style is sewn in continuous flow, so every
-   * machine on the line is threaded simultaneously and the requirement is the sum of the
-   * position counts across every operation, not the largest single one.
+   * cannot feed two needles from one cone.
+   *
+   * **Each machine is counted once.** A sequence re-uses the same machine over and over —
+   * STY-4471 puts four operations on the one Four Thread Overlock — and that is one machine
+   * being used again, not four overlocks standing on the line. Its needles are threaded
+   * once, so the cones on it are counted once no matter how many operations run there.
    */
   threadingCones: number;
 }
@@ -261,6 +264,12 @@ export function rollUpByThread(
   const machineTypeById = indexById(machineTypes);
   const threadById = indexById(threads);
   const rollup = new Map<string, ThreadRollupEntry>();
+  /**
+   * Position slots already counted toward each thread's threading floor, keyed by thread id.
+   * A position id belongs to exactly one machine type, so a member of this set means "this
+   * machine, at this position, already has a cone of this thread standing on it".
+   */
+  const threadedSlots = new Map<string, Set<string>>();
 
   const ordered = [...operations].sort((a, b) => a.sequence - b.sequence);
 
@@ -273,9 +282,12 @@ export function rollUpByThread(
       if (!thread) continue;
 
       let entry = rollup.get(threadId);
-      if (!entry) {
+      let slots = threadedSlots.get(threadId);
+      if (!entry || !slots) {
         entry = { threadId, thread, metresPerGarment: 0, consumers: [], threadingCones: 0 };
+        slots = new Set<string>();
         rollup.set(threadId, entry);
+        threadedSlots.set(threadId, slots);
       }
 
       const metres = positionMetres(operation.seamLengthCm, position.consumptionRatio, position.count);
@@ -284,12 +296,24 @@ export function rollUpByThread(
       /*
        * One cone per position slot: a two-needle position needs two cones on the machine.
        *
+       * **Counted once per machine, however many operations use it.** Sequences repeat a
+       * machine constantly — four of STY-4471's twelve operations are on the one overlock —
+       * and re-using a machine does not put a second one on the line. Counting per operation
+       * inflated the cone order for every repeated machine; the overlock's cones are the
+       * cones on that overlock, whether it sews one seam or five.
+       *
+       * The set is per thread, and the key is the position id, which belongs to exactly one
+       * machine type. So the same machine carrying a *different* thread at that position in
+       * a later operation is still counted — one cone feeds one position, and a re-thread
+       * needs its own cone.
+       *
        * Only for operations that actually sew, though. A seam length of zero means the
        * operation has not been filled in yet — the screen shows "must be > 0" under the
        * field — and a machine that sews nothing is not standing on the line consuming
        * cones. Without this guard an empty draft operation would demand a cone order.
        */
-      if (operation.seamLengthCm > 0) {
+      if (operation.seamLengthCm > 0 && !slots.has(position.id)) {
+        slots.add(position.id);
         entry.threadingCones += position.count;
       }
       entry.consumers.push({

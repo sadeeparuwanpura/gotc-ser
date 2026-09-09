@@ -193,13 +193,25 @@ not just the thread that gets used up.
 So each thread now carries a second requirement:
 
 ```
-threadingCones = Σ position.count, over every operation using that thread
+threadingCones = Σ position.count, over every distinct machine slot carrying that thread
 cones          = max(ceil(metresWithWastage ÷ coneYieldM), threadingCones)
 ```
 
 The style is sewn in **continuous flow** — every machine on the line is threaded at the same
-time — so the floor is the *sum* of the position slots across all operations, not the largest
-single machine. Two flatlocks each running Epic on two needles is four cones, not two.
+time — so the floor is the *sum* of the position slots across the line, not the largest single
+machine. Two different machines each running Epic on two needles is four cones, not two.
+
+**But a machine is counted once, however many operations run on it.** A sequence re-uses the
+same machine constantly: four of STY-4471's twelve operations are on the one Four Thread
+Overlock, and operations 5 and 6 are both on the one lock stitch. That is the same machine
+being used again, not four overlocks standing on the line, so its cones are counted once.
+Counting per operation inflated the order for every repeated machine — the seeded style's
+Epic asked for 6 cones where the line only mounts 4.
+
+The dedupe key is the position id, which belongs to exactly one machine type, and the set is
+kept per thread. So the same machine **re-threaded** with a different thread at that position
+in a later operation is counted again: one cone still feeds one position, and Gramax cannot
+be fed from Epic's cone.
 
 The factory's worked example, which is pinned as a test:
 
@@ -224,6 +236,9 @@ Four cones on one machine, from a job that consumes less than one.
   filled in — the screen shows "must be > 0" — and a machine that sews nothing is not on the
   line. Without that guard an empty draft row would demand a cone order. This is what keeps
   test vector 9 ("zero seam length yields 0 metres") at zero cones.
+- **Consumption is not deduped.** Only the threading floor counts a machine once. Every
+  operation's metres are still summed, repeated machine or not — a machine sewing five seams
+  eats five seams' worth of thread.
 - **Existing order snapshots are untouched.** They are frozen by design; `threadingCones`
   defaults to 0 on records written before this rule existed.
 
