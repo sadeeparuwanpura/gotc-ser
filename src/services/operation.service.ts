@@ -3,6 +3,7 @@ import { GarmentModel } from '../models/garment.model';
 import { OperationModel, type OperationDocument } from '../models/operation.model';
 import { ThreadModel } from '../models/thread.model';
 import {
+  distinctThreadCodes,
   formatPositionSpecs,
   formatThreadSummary,
   isOperationComplete,
@@ -50,12 +51,26 @@ function toDTO(operation: OperationDocument, master: MasterData): OperationDTO {
     operationMetres: roundTo(operationMetres(domain, machineType), 2),
     threadSummary: formatThreadSummary(domain, machineType, master.threads),
     /*
-     * The same upper-cased cells the cone order prints, from the same formatter — so the
-     * operation breakdown and the cone order can never describe a position differently.
-     * An unassigned position formats as "—", which is why adding this to the breakdown
-     * sheet does not make it depend on thread data: it still prints when incomplete.
+     * The printed cells for the operation breakdown, from the same formatter the cone order
+     * uses — so the two documents can never describe a position differently.
+     *
+     * `withCode` appends the thread's shade code: `LOOPER - 2 - 120 SURFILOR - C9573`. The
+     * breakdown is the sheet the floor works from, and the code is what they pull a cone by,
+     * so it carries it; the cone order's snapshot rows are deliberately left alone.
+     *
+     * An unassigned position still formats as "—" with no code, which is why this does not
+     * make the breakdown depend on thread data: it prints while assignment is incomplete.
      */
-    threadCells: formatPositionSpecs(domain, machineType, master.threads, { upper: true }),
+    threadCells: formatPositionSpecs(domain, machineType, master.threads, {
+      upper: true,
+      withCode: true
+    }),
+    /*
+     * The shade codes for the operations table's own column. Derived from the same position
+     * entries as the two strings above, so a code can never appear on one surface and not
+     * another — and de-duplicated, because two positions on one thread is one cone to fetch.
+     */
+    threadCodes: distinctThreadCodes(domain, machineType, master.threads),
     positions: sortPositions(machineType).map((position) => ({
       id: position.id,
       position: position.position,

@@ -3,6 +3,7 @@ import {
   applyOrderScaling,
   applyRounding,
   buildCalculation,
+  distinctThreadCodes,
   formatPositionSpecs,
   formatThreadSummary,
   isOperationComplete,
@@ -408,6 +409,53 @@ describe('formatPositionSpecs', () => {
     // No machine type yet: no cells at all, so the columns simply stay empty.
     const bare = op('o2', 2, 'Unnamed', null, 0, {});
     expect(formatPositionSpecs(bare, null, THREADS, { upper: true })).toEqual([]);
+  });
+
+  it('appends the thread shade code when the breakdown sheet asks for it', () => {
+    // The operation breakdown prints the code the floor pulls a cone by. It lives on the
+    // thread's `colour` field — "C9573" for a dyed shade, "White" for stock.
+    const coded: Thread = { ...SURFILOR, id: 't9', colour: 'C9573' };
+    const operation = op('o1', 1, 'Join the shoulder', 'ol4', 42, {
+      'ol4-NEEDLE': 't1',
+      'ol4-UPPER_LOOPER': 't9',
+      'ol4-LOWER_LOOPER': 't9'
+    });
+
+    expect(
+      formatPositionSpecs(operation, OL4, [...THREADS, coded], { upper: true, withCode: true })
+    ).toEqual(['LOOPER - 2 - 120 SURFILOR - C9573', 'NEEDLE - 2 - 160 GRAMAX - WHITE']);
+
+    // Without the flag the cells are byte-for-byte what the cone order already prints.
+    expect(formatPositionSpecs(operation, OL4, [...THREADS, coded], { upper: true })).toEqual([
+      'LOOPER - 2 - 120 SURFILOR',
+      'NEEDLE - 2 - 160 GRAMAX'
+    ]);
+  });
+
+  it('adds no code for an unassigned position, so the sheet still prints incomplete', () => {
+    const partial = op('o1', 1, 'Join the shoulder', 'ol4', 42, { 'ol4-NEEDLE': 't1' });
+    expect(formatPositionSpecs(partial, OL4, THREADS, { upper: true, withCode: true })).toEqual([
+      'LOOPER - 2 - —',
+      'NEEDLE - 2 - 160 GRAMAX - WHITE'
+    ]);
+  });
+
+  it('lists an operation’s shade codes once each, in position order', () => {
+    // The operations table's own column. Both loopers carry t9, so C9573 appears once — it is
+    // one cone to fetch off the rack, however many positions it feeds.
+    const coded: Thread = { ...SURFILOR, id: 't9', colour: 'C9573' };
+    const operation = op('o1', 1, 'Join the shoulder', 'ol4', 42, {
+      'ol4-NEEDLE': 't1',
+      'ol4-UPPER_LOOPER': 't9',
+      'ol4-LOWER_LOOPER': 't9'
+    });
+
+    expect(distinctThreadCodes(operation, OL4, [...THREADS, coded])).toEqual(['C9573', 'White']);
+
+    // An unassigned position contributes no code, and no machine type contributes none at all.
+    const partial = op('o2', 2, 'Half filled', 'ol4', 42, { 'ol4-NEEDLE': 't1' });
+    expect(distinctThreadCodes(partial, OL4, THREADS)).toEqual(['White']);
+    expect(distinctThreadCodes(op('o3', 3, 'Unnamed', null, 0, {}), null, THREADS)).toEqual([]);
   });
 
   it('returns nothing when no machine type is selected', () => {

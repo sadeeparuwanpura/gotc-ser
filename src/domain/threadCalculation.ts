@@ -173,6 +173,11 @@ export interface PositionSpec {
   count: number;
   /** `<ticket> <brand>`, or an em dash when the position has no thread. */
   spec: string;
+  /**
+   * The thread's shade code — "C9573" — which is what the floor pulls a cone by. Held on
+   * the thread's `colour` field. Empty when the position has no thread.
+   */
+  code: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +447,8 @@ export function positionSpecEntries(
     const threadId = operation.threads[position.id];
     const thread = threadId ? threadById.get(threadId) : undefined;
     const spec = thread ? `${thread.ticket} ${thread.brand}` : UNASSIGNED;
+    // The shade code the floor pulls by — "C9573". Blank when nothing is assigned.
+    const code = thread ? thread.colour : '';
 
     const next = positions[index + 1];
     const collapses =
@@ -450,7 +457,7 @@ export function positionSpecEntries(
       operation.threads[next.id] === threadId;
 
     if (collapses && next) {
-      entries.push({ label: 'LOOPER', count: position.count + next.count, spec });
+      entries.push({ label: 'LOOPER', count: position.count + next.count, spec, code });
       index += 2;
       continue;
     }
@@ -461,7 +468,7 @@ export function positionSpecEntries(
         : 'LOOPER'
       : POSITION_LABELS[position.position];
 
-    entries.push({ label, count: position.count, spec });
+    entries.push({ label, count: position.count, spec, code });
     index += 1;
   }
 
@@ -476,13 +483,44 @@ export function formatPositionSpecs(
   operation: Operation,
   machineType: MachineType | null,
   threads: readonly Thread[],
-  options: { upper: boolean }
+  options: { upper: boolean; withCode?: boolean }
 ): string[] {
-  return positionSpecEntries(operation, machineType, threads).map((entry) =>
-    options.upper
-      ? `${entry.label} - ${entry.count} - ${entry.spec.toUpperCase()}`
-      : `${entry.label} ${entry.count} × ${entry.spec}`
-  );
+  return positionSpecEntries(operation, machineType, threads).map((entry) => {
+    const showCode = options.withCode === true && entry.code !== '';
+
+    if (options.upper) {
+      const code = showCode ? ` - ${entry.code.toUpperCase()}` : '';
+      return `${entry.label} - ${entry.count} - ${entry.spec.toUpperCase()}${code}`;
+    }
+
+    const code = showCode ? ` · ${entry.code}` : '';
+    return `${entry.label} ${entry.count} × ${entry.spec}${code}`;
+  });
+}
+
+/**
+ * The distinct shade codes an operation pulls — `["C9573", "WHITE"]` — in position order.
+ *
+ * The floor picks a cone off the rack by its code, not by ticket and brand, so the operations
+ * table carries them as their own column rather than burying them in the thread summary. Two
+ * positions carrying the same thread produce one code, because it is one cone to fetch; a
+ * position with nothing assigned yet contributes nothing.
+ */
+export function distinctThreadCodes(
+  operation: Operation,
+  machineType: MachineType | null,
+  threads: readonly Thread[]
+): string[] {
+  const seen = new Set<string>();
+  const codes: string[] = [];
+
+  for (const entry of positionSpecEntries(operation, machineType, threads)) {
+    if (entry.code === '' || seen.has(entry.code)) continue;
+    seen.add(entry.code);
+    codes.push(entry.code);
+  }
+
+  return codes;
 }
 
 /** The operations table's "Thread" column. Empty when no machine type is selected. */

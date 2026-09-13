@@ -227,6 +227,12 @@ export interface OperationDTO {
    * An unassigned position reads "—", so a sheet using these still prints when incomplete.
    */
   threadCells: string[];
+  /**
+   * The distinct shade codes this operation pulls — `["C9573", "WHITE"]` — in position order.
+   * The operations table shows them as their own column, because the floor fetches a cone by
+   * its code. Empty until a thread is assigned.
+   */
+  threadCodes: string[];
   /** The machine type's positions inlined, so the expanded panel needs no extra call. */
   positions: OperationPositionDTO[];
 }
